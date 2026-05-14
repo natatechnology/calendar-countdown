@@ -37,9 +37,6 @@ yarn-error.log*
 # Google OAuth client secret
 client_secret_*
 
-# Claude Code local config
-.claude/
-
 # vercel
 .vercel
 
