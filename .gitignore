@@ -32,6 +32,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+.env.local
+
+# Google OAuth client secret
+client_secret_*
+
+# Claude Code local config
+.claude/
 
 # vercel
 .vercel
