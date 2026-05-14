@@ -11,10 +11,16 @@ Una pantalla web personal que muestra una **cuenta regresiva en tiempo real** ha
 - [Funcionalidades](#funcionalidades)
   - [Autenticación con Google](#autenticación-con-google)
   - [Cuenta regresiva con cambio de color por urgencia](#cuenta-regresiva-con-cambio-de-color-por-urgencia)
-  - [Barra superior: reloj DR + mini calendario](#barra-superior-reloj-dr--mini-calendario)
-  - [Tira inferior: próximos eventos](#tira-inferior-próximos-eventos)
+  - ["Sucediendo ahora" con barra de progreso](#sucediendo-ahora-con-barra-de-progreso)
+  - [Barra superior: reloj DR + noticias + mini calendario](#barra-superior-reloj-dr--noticias--mini-calendario)
+  - [Mini calendario con navegación y feriados](#mini-calendario-con-navegación-y-feriados)
+  - [Modal de detalles del día](#modal-de-detalles-del-día)
+  - [Modal de detalles del evento](#modal-de-detalles-del-evento)
+  - [Tira inferior: próximos eventos (+ linger de eventos recientes)](#tira-inferior-próximos-eventos--linger-de-eventos-recientes)
   - [Crear, editar y eliminar eventos](#crear-editar-y-eliminar-eventos)
-  - [Fondo de luces de servidores](#fondo-de-luces-de-servidores)
+  - [Panel de configuración](#panel-de-configuración)
+  - [Fondo configurable (luces / color / degradado / imagen / video)](#fondo-configurable-luces--color--degradado--imagen--video)
+  - [Feed de noticias (RSS / Atom / JSON Feed)](#feed-de-noticias-rss--atom--json-feed)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Configuración inicial](#configuración-inicial)
   - [1. Google Cloud Console](#1-google-cloud-console)
@@ -34,12 +40,17 @@ Una pantalla web personal que muestra una **cuenta regresiva en tiempo real** ha
 - Hace login con tu cuenta de Google con un solo botón.
 - Agrega los eventos de **todos** los calendarios a los que estás suscrito.
 - Muestra en grande la cuenta regresiva (`HH:MM:SS`) al **siguiente** evento por empezar.
-- Si tienes un evento en curso, lo muestra como "Happening now" sin reemplazar la cuenta regresiva.
+- Si tienes un evento en curso, lo muestra como "Sucediendo ahora" con una **barra de progreso** que se va llenando, sin reemplazar la cuenta regresiva al siguiente.
 - Salta automáticamente los eventos que **declinaste** (RSVP "No") y los **cancelados**.
 - Incluye eventos de todo el día.
-- En la parte superior: hora actual de **Santo Domingo** + mini calendario del mes con el día de hoy resaltado.
-- En la parte inferior: cards con los próximos eventos.
+- En la parte superior: hora actual de **Santo Domingo**, un feed de noticias opcional, y un mini calendario navegable.
+- Click en un día del mini calendario abre un modal con **todos los eventos y feriados** de ese día.
+- Click en un evento (de la tira inferior o del modal del día) abre un modal de **detalles** con descripción, ubicación y link a Google Calendar.
+- En la parte inferior: cards con los próximos eventos. Los eventos recién terminados siguen visibles unos minutos (linger configurable).
 - Botones para **crear**, **editar** y **eliminar** eventos sin salir de la app.
+- **Feriados** detectados automáticamente (Google Holidays + nombres en es/en) y marcados con un puntito ámbar.
+- **Panel de configuración** con pestañas para ajustar pantalla, fondo, calendario, noticias y exportar/importar todo como JSON.
+- **Fondo personalizable**: luces de servidores animadas, color sólido, degradado, imagen o video propio.
 - La cuenta regresiva y el fondo van cambiando de color (blanco → ámbar → naranja → rojo, con pulso al final) según se acerca la hora del evento.
 
 ---
@@ -53,7 +64,7 @@ Una pantalla web personal que muestra una **cuenta regresiva en tiempo real** ha
 | Calendar API    | **`googleapis`** SDK (servidor)                                                           |
 | Estado / fetch  | **SWR** (refresh cada 60 s, refetch en focus y al expirar el evento siguiente)            |
 | Estilos         | **Tailwind CSS v4** + variables CSS                                                       |
-| Persistencia    | **Cero base de datos**. Tokens en cookies HTTP-only encriptadas (JWE) firmadas con AUTH_SECRET |
+| Persistencia    | **Cero base de datos**. Tokens en cookies HTTP-only encriptadas (JWE) firmadas con AUTH_SECRET. Configuración del usuario en `localStorage` (cliente). |
 | Runtime         | Node.js (Vercel-compatible)                                                               |
 
 ---
@@ -62,7 +73,7 @@ Una pantalla web personal que muestra una **cuenta regresiva en tiempo real** ha
 
 ### Autenticación con Google
 
-- Botón "Sign in with Google" en la landing (sesión cerrada).
+- Botón "Iniciar sesión con Google" en la landing (sesión cerrada).
 - Flujo OAuth 2.0 estándar — Auth.js maneja todo el round-trip.
 - Scope solicitado:
   - `openid email profile`
@@ -87,27 +98,78 @@ La función que decide el color vive en `app/page.tsx` (`getUrgency`). Las anima
 
 El tick de los segundos es puramente local (`setInterval` cada 1000 ms haciendo `setNow(Date.now())`) — **no** hay llamada de red por segundo. Cuando la pestaña pasa a `visibilitychange === "hidden"`, el tick se pausa y al volver se reanuda + dispara un `mutate()` para sincronizar.
 
-### Barra superior: reloj DR + mini calendario
+### "Sucediendo ahora" con barra de progreso
 
-- **Reloj de Santo Domingo**: formato 24 h (`HH:MM:SS`) en zona `America/Santo_Domingo`, con la fecha completa en español debajo. Actualiza cada segundo con el mismo tick que la cuenta regresiva.
-- **Mini calendario**: cuadrícula del mes actual con encabezados L-M-M-J-V-S-D. El día de hoy va en blanco sólido; los días con eventos en el mes tienen un puntito azul tenue debajo del número. El mes se calcula también en TZ Santo Domingo, no en la TZ del navegador.
+Si hay un evento **en curso** (la hora actual cae entre su inicio y su fin), aparece un bloque arriba de la cuenta regresiva con:
 
-### Tira inferior: próximos eventos
+- Encabezado `SUCEDIENDO AHORA`.
+- Título del evento.
+- Una **barra de progreso** azul que se va llenando linealmente del inicio al fin del evento (transición CSS de 1 s para que se vea fluida con el tick del reloj).
+- A los lados de la barra, la hora de inicio y la hora de fin.
 
-- Hasta 8 cards horizontales con scroll si no caben todos.
-- Cada card muestra: día (número grande) + mes (abreviado), día de la semana + hora (o "all day"), y título truncado a dos líneas.
-- Las cards en calendarios donde tengo permiso de **escritura** muestran un ícono de lápiz al pasar el mouse → abre el modal de edición.
+La cuenta regresiva grande sigue mostrando el **siguiente** evento — el "Sucediendo ahora" no la reemplaza, la complementa.
+
+### Barra superior: reloj DR + noticias + mini calendario
+
+La cabecera tiene tres bloques con `justify-between`:
+
+- **Izquierda**: reloj de Santo Domingo (24 h, `HH:MM:SS`) + fecha completa en español.
+- **Centro** (opcional): feed de noticias (ver más abajo). Solo aparece si está activado en configuración.
+- **Derecha**: mini calendario navegable del mes.
+
+Todos los formatos de fecha usan `America/Santo_Domingo` explícitamente — no la TZ del navegador — para evitar inconsistencias.
+
+### Mini calendario con navegación y feriados
+
+- Cuadrícula del mes con encabezados L-M-M-J-V-S-D.
+- Controles arriba: `«` año anterior, `‹` mes anterior, **nombre del mes** (click para volver al mes actual), `›` mes siguiente, `»` año siguiente.
+- El día de hoy va en blanco sólido.
+- Los días con eventos llevan un puntito **azul** debajo del número.
+- Los días con feriados llevan un puntito **ámbar** y el número en ámbar (se puede desactivar en configuración → Calendario).
+- Click en cualquier día abre el [modal de detalles del día](#modal-de-detalles-del-día).
+
+### Modal de detalles del día
+
+Al clickear un día del mini calendario, se hace `GET /api/events/day?date=YYYY-MM-DD` y se abre un modal con:
+
+- **Feriados** del día (sección separada, fondo ámbar tenue).
+- **Eventos** regulares (hora de inicio – fin a la izquierda + título). Click en un evento abre el [modal de detalles del evento](#modal-de-detalles-del-evento).
+
+Si no hay nada en ese día, muestra "No hay nada en este día." El endpoint consulta una ventana UTC ensanchada (±14 h) para no perder eventos que cruzan medianoche en zonas raras, y luego filtra al día de Santo Domingo.
+
+### Modal de detalles del evento
+
+Click en una card de la tira inferior o en un evento dentro del modal del día abre este modal de **solo lectura** con:
+
+- Calendario al que pertenece.
+- Título.
+- "Cuándo" (fecha + rango de horas, o "Todo el día").
+- Ubicación (link clickable si es URL).
+- Reunión (Google Meet u otro `hangoutLink`).
+- Descripción (preserva saltos de línea).
+- Link "Abrir en Google Calendar" (cuando hay `htmlLink`).
+- Botón **Editar** si tienes permiso de escritura en ese calendario — abre el [modal de edición](#crear-editar-y-eliminar-eventos).
+
+### Tira inferior: próximos eventos (+ linger de eventos recientes)
+
+- Cards horizontales con scroll si no caben todas.
+- Máximo configurable (default 8, rango 1–20).
+- Cada card muestra: día (número grande) + mes (abreviado), día de la semana + hora (o "todo el día"), y título truncado a dos líneas.
+- Las cards en calendarios donde tienes permiso de **escritura** muestran un ícono de lápiz al pasar el mouse → abre el modal de edición.
+- Click en cualquier card abre el modal de detalles.
 - Los eventos vienen pre-filtrados (declinados y cancelados ya se eliminaron en el server).
+
+**Linger.** Los eventos que terminaron en los últimos N minutos siguen apareciendo a la izquierda de los próximos, con la etiqueta `PASADO` y opacidad reducida. N es configurable entre **1 minuto y 2 horas** (default 5). Útil para no perder de vista la reunión que acaba de terminar mientras te re-centras. Los feriados nunca entran al linger (inundarían la tira).
 
 ### Crear, editar y eliminar eventos
 
-Hay un menú abajo a la derecha con dos enlaces estilo nav:
+En la nav inferior derecha:
 
 ```
-+ NUEVO EVENTO   |   SIGN OUT
++ NUEVO EVENTO   |   CONFIGURACIÓN   |   CERRAR SESIÓN
 ```
 
-Ambos abren un modal con form fields:
+"Nuevo evento" abre un modal con form fields:
 
 - **Título** (requerido)
 - **Calendario** (dropdown — solo calendarios con `accessRole` de `owner` o `writer`; al editar, el calendario queda fijo porque la API de Google no permite mover eventos entre calendarios con un PATCH)
@@ -122,17 +184,56 @@ El modal usa la zona horaria del navegador para construir el ISO datetime con of
 
 Tras guardar/eliminar, hace `mutate()` de SWR para refrescar la vista inmediatamente.
 
-### Fondo de luces de servidores
+### Panel de configuración
 
-Componente `ServerLights` que renderiza:
+Click en `CONFIGURACIÓN` en la nav abre un modal con 5 pestañas. Todo se guarda en `localStorage` bajo la clave `calendar-countdown:settings:v2`. Si encuentra una versión `:v1` migra los segundos legacy a minutos.
 
-- **180 puntos LED** distribuidos pseudo-aleatoriamente (con seed determinista `mulberry32` para que SSR e hidratación coincidan).
-- Distribución de colores: 50 % verde, 22 % ámbar, 18 % azul, 5 % rojo, 5 % violeta.
-- Cada LED parpadea con `animation-delay` y `animation-duration` aleatorios (entre 1.4 s y 4.6 s) para que el patrón se sienta orgánico.
-- Encima de los LEDs, dos capas sutiles: rayas verticales sugiriendo columnas de racks y un scanline horizontal tipo CRT (opacidad muy baja).
-- Detrás de todo, un gradiente radial oscuro centrado.
+**Pantalla**
+- **Permanencia tras finalizar** — slider 1 min … 2 h. Cuánto tiempo permanecen los eventos terminados en la tira inferior.
+- **Máximo de próximos eventos** — slider 1 … 20.
 
-Por encima del fondo de servidores hay otra capa (`-z-[5]`) que es el **tinte de urgencia** descrito arriba — esta cambia con la cuenta regresiva.
+**Fondo**
+- Selector de tipo: Luces / Color / Degradado / Imagen / Video.
+- Controles específicos según el tipo (ver siguiente sección).
+
+**Calendario**
+- **Destacar feriados** (on/off) — controla si los días con feriado aparecen marcados en ámbar en el mini calendario.
+
+**Noticias**
+- **Mostrar feed de noticias** (on/off).
+- **URL del feed** (RSS, Atom o JSON Feed).
+- **Refrescar cada** — slider 1 … 120 min.
+- **Ancho del feed** — slider 240 … 960 px.
+
+**JSON**
+- Textarea con la configuración completa serializada.
+- Botones **Copiar**, **Descargar** (`calendario-settings.json`) y **Aplicar JSON** para pegar otra configuración. Útil para sincronizar entre dispositivos sin backend.
+
+Abajo del modal: **Restablecer valores** (con `confirm()`) → vuelve a los defaults.
+
+### Fondo configurable (luces / color / degradado / imagen / video)
+
+El componente `Background` cambia lo que renderiza según `settings.background.type`. Encima del fondo siempre hay otra capa (`-z-[5]`) con el **tinte de urgencia** descrito arriba.
+
+- **Luces** (default) — el `ServerLights` original: 180 LEDs distribuidos pseudo-aleatoriamente (seed determinista `mulberry32` para que SSR/hidratación coincidan), 50 % verde, 22 % ámbar, 18 % azul, 5 % rojo, 5 % violeta. Cada LED parpadea con `animation-delay` y `animation-duration` aleatorios. Encima, rayas verticales sutiles tipo racks + scanline horizontal CRT.
+- **Color** — color sólido. Picker de color + input hex.
+- **Degradado** — `linear-gradient` con dos colores y ángulo (0–360°).
+- **Imagen** — subes un archivo de hasta **4 MB** que se guarda como `data:` URL en `localStorage`. Controles de **blur** (0–40 px) y **opacidad** (0–100 %). Encima, un degradado radial oscuro para garantizar contraste con el texto.
+- **Video** — subes un archivo de hasta **16 MB** o pegas una URL `.mp4`/`.webm` directa. Reproduce en `autoplay loop playsInline`. Controles de blur, opacidad y mute.
+
+Los límites (4 MB / 16 MB) son por `localStorage`, no por procesamiento — la cuota típica de un origin es ~5–10 MB.
+
+### Feed de noticias (RSS / Atom / JSON Feed)
+
+Si está activado, aparece una columna entre el reloj y el mini calendario con cards horizontales:
+
+- **Encabezado**: `NOTICIAS`.
+- Cada card: fecha relativa ("hace 2 horas") o nombre del feed + título a 3 líneas, hasta 8 cards.
+- Click en una card abre el link original en pestaña nueva.
+
+**Cómo funciona el fetching.** El navegador casi nunca puede hacer `fetch` directo a un RSS por CORS. La app expone `/api/news?url=...` que actúa como **proxy del lado del servidor**: descarga el feed, parsea XML (RSS/Atom) o JSON Feed, y devuelve una lista normalizada `{id, title, link?, summary?, source?, pubMs?}`. Timeout de 10 s, máximo 20 ítems, sin cache.
+
+El refresh es por `SWR` con `refreshInterval` configurable en minutos.
 
 ---
 
@@ -143,19 +244,28 @@ calendario/
 ├── app/
 │   ├── api/
 │   │   ├── auth/[...nextauth]/route.ts     # Handlers GET/POST de Auth.js
-│   │   └── events/
-│   │       ├── route.ts                    # GET (listar), POST (crear)
-│   │       └── [eventId]/route.ts          # PATCH (editar), DELETE
+│   │   ├── events/
+│   │   │   ├── route.ts                    # GET (listar con linger), POST (crear)
+│   │   │   ├── [eventId]/route.ts          # PATCH (editar), DELETE
+│   │   │   └── day/route.ts                # GET eventos+feriados de un día
+│   │   └── news/route.ts                   # Proxy RSS/Atom/JSON Feed
 │   ├── components/
-│   │   ├── ServerLights.tsx                # Fondo animado
+│   │   ├── Background.tsx                  # Switch del fondo según settings
+│   │   ├── ServerLights.tsx                # Fondo "luces" animado
 │   │   ├── Dashboard.tsx                   # Reloj DR, MiniCalendar, UpcomingEvents
-│   │   └── EventModal.tsx                  # Modal crear/editar/eliminar
+│   │   ├── EventModal.tsx                  # Modal crear/editar/eliminar
+│   │   ├── EventDetailsModal.tsx           # Modal solo-lectura de un evento
+│   │   ├── DayDetailsModal.tsx             # Modal con eventos+feriados de un día
+│   │   ├── SettingsModal.tsx               # Modal de configuración (5 pestañas)
+│   │   └── NewsFeed.tsx                    # Tira de cards de noticias
 │   ├── globals.css                         # Tailwind + keyframes de urgencia
 │   ├── layout.tsx                          # SessionProvider, fuentes
 │   ├── page.tsx                            # Página principal (cliente)
 │   └── providers.tsx                       # SessionProvider de NextAuth
 ├── lib/
-│   └── event-utils.ts                      # Tipos, parsing de TZ, filtrado, picker
+│   ├── event-utils.ts                      # Tipos, parsing TZ, filtrado, picker, feriados
+│   ├── news-types.ts                       # Tipos del feed de noticias
+│   └── settings.ts                         # Hook useSettings + persistencia + migración
 ├── types/
 │   └── next-auth.d.ts                      # Extensión de tipos de Session/JWT
 ├── auth.ts                                 # Config de Auth.js (Google + refresh)
@@ -206,21 +316,23 @@ npm install
 npm run dev
 ```
 
-Abre [http://localhost:3000](http://localhost:3000), clic en **Sign in with Google**, acepta los permisos. La cuenta regresiva debería aparecer (o "No upcoming events" si no tienes nada en los próximos 7 días).
+Abre [http://localhost:3000](http://localhost:3000), clic en **Iniciar sesión con Google**, acepta los permisos. La cuenta regresiva debería aparecer (o "No hay próximos eventos" si no tienes nada en los próximos 7 días).
 
 ---
 
 ## API interna
 
-Todas las rutas viven bajo `/api/`. Todas requieren sesión activa (cookie de Auth.js); responden `401` si no.
+Todas las rutas viven bajo `/api/`. Las de eventos requieren sesión activa (cookie de Auth.js); responden `401` si no. `/api/news` es público (es solo un proxy de URLs públicas).
 
-| Método  | Ruta                                          | Cuerpo / query                                                  | Devuelve                                                       |
-| ------- | --------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------- |
-| `GET`   | `/api/events`                                 | —                                                                | `{ current, next, upcoming, writableCalendars, nowMs }`        |
-| `POST`  | `/api/events`                                 | `{ calendarId, title, isAllDay, startISO, endISO, location?, description?, timeZone? }` | `{ id, htmlLink }` (201)                                       |
-| `PATCH` | `/api/events/[eventId]`                       | mismos campos opcionales que POST + `calendarId` requerido       | `{ id }`                                                       |
-| `DELETE`| `/api/events/[eventId]?calendarId=...`        | —                                                                | `{ ok: true }`                                                 |
-| `GET`   | `/api/auth/*` (Auth.js)                       | manejado por Auth.js (`signin`, `callback`, `session`, `csrf`, etc.) |                                                          |
+| Método  | Ruta                                          | Cuerpo / query                                                  | Devuelve                                                                |
+| ------- | --------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `GET`   | `/api/events?lingerMinutes=N`                 | `lingerMinutes` (0–120, opcional)                                | `{ current, next, past, upcoming, writableCalendars, nowMs }`           |
+| `POST`  | `/api/events`                                 | `{ calendarId, title, isAllDay, startISO, endISO, location?, description?, timeZone? }` | `{ id, htmlLink }` (201)                                |
+| `PATCH` | `/api/events/[eventId]`                       | mismos campos opcionales que POST + `calendarId` requerido       | `{ id }`                                                                |
+| `DELETE`| `/api/events/[eventId]?calendarId=...`        | —                                                                | `{ ok: true }`                                                          |
+| `GET`   | `/api/events/day?date=YYYY-MM-DD`             | `date` (requerida)                                               | `{ date, events: CalendarEventPayload[] }` (filtrado a TZ Santo Domingo)|
+| `GET`   | `/api/news?url=<feed-url>`                    | `url` http(s) (requerida)                                        | `{ items: NewsItem[], fetchedAt }` (RSS/Atom/JSON Feed normalizado)     |
+| `GET`   | `/api/auth/*` (Auth.js)                       | manejado por Auth.js (`signin`, `callback`, `session`, `csrf`, etc.) |                                                                     |
 
 El payload de un evento (`CalendarEventPayload`):
 
@@ -230,7 +342,7 @@ El payload de un evento (`CalendarEventPayload`):
   calendarId: string;
   calendarName?: string;
   title: string;
-  startMs: number;   // epoch ms ya convertido a UTC
+  startMs: number;     // epoch ms ya convertido a UTC
   endMs: number;
   isAllDay: boolean;
   location?: string;
@@ -238,7 +350,21 @@ El payload de un evento (`CalendarEventPayload`):
   hangoutLink?: string;
   htmlLink?: string;
   timeZone?: string;
-  canEdit?: boolean; // true si soy owner/writer del calendario
+  canEdit?: boolean;   // true si soy owner/writer del calendario
+  isHoliday?: boolean; // true si viene de un calendario de feriados
+}
+```
+
+El item de noticia (`NewsItem`):
+
+```ts
+{
+  id: string;
+  title: string;
+  link?: string;
+  summary?: string;
+  source?: string;
+  pubMs?: number;      // epoch ms si el feed traía fecha
 }
 ```
 
@@ -246,13 +372,18 @@ El payload de un evento (`CalendarEventPayload`):
 
 ## Decisiones de diseño
 
-- **Sin base de datos**. Toda la sesión vive en una cookie JWE encriptada con `AUTH_SECRET`. Cabe holgado en los 4 KB de límite de cookie. Si lo despliegas en multiple servidores no hay nada compartido que sincronizar.
+- **Sin base de datos**. Toda la sesión vive en una cookie JWE encriptada con `AUTH_SECRET`. Cabe holgado en los 4 KB de límite de cookie. La configuración del usuario vive en `localStorage` (por dispositivo) — si quieres llevarla a otro browser usas la pestaña JSON del modal.
 - **Polling 60 s + tick local 1 s**. No abrimos webhooks de Google Calendar (requerirían un endpoint HTTPS público + renovación cada 30 días). La latencia de "vi un cambio en Google Calendar a aparece en la app" es como máximo 1 minuto, suficiente para este caso de uso.
 - **Pausa cuando la pestaña está oculta**. Tanto el `setInterval` del tick local como SWR pausan; al volver a la pestaña, hace refetch inmediato.
 - **Mejor recargar el "next" cuando vence**. Cuando la cuenta regresiva llega a cero, `mutate()` se dispara una vez (con guard de 5 s para evitar tormentas) para pasar al siguiente evento.
 - **All-day events tienen TZ resbalosa**. Google devuelve `start.date` = "YYYY-MM-DD" sin zona horaria. Lo interpretamos como midnight en la zona del calendario que lo contiene (`calendarList.timeZone`) — esto evita que un evento "lunes" aparezca como sábado al cambiar de zona.
 - **Match por `self === true`, no por email**. Para detectar tu propio RSVP en `attendees`, comparamos contra la flag `self` que Google pone — esto maneja aliases, delegación y cuentas con múltiples emails.
 - **Filtros server-side**. Los cancelados y declinados se quitan antes de salir del backend; el cliente no necesita conocer esa lógica.
+- **Detección de feriados sin lista hardcoded**. `isHolidayCalendar()` reconoce los calendarios públicos de Google (`*#holiday@group.v.calendar.google.com`) y nombres que contengan "holiday", "festivo" o "feriado". Así funciona con cualquier país que el usuario tenga suscrito.
+- **Linger fuera de los feriados**. Los feriados nunca entran al bucket "pasado" del linger porque inundarían la tira un martes cualquiera con todos los del año en curso.
+- **Proxy de noticias en el server**. RSS/Atom raramente sirven CORS abierto. El endpoint `/api/news` descarga y normaliza en el servidor; el cliente solo ve JSON. Timeout de 10 s y `Cache-Control: no-store` (el cache real lo hace SWR en el cliente).
+- **Imágenes/videos de fondo en `localStorage`**. Subir un archivo lo convierte a `data:` URL y se guarda local — cero red, cero servidor. Por eso los límites (4 MB imagen / 16 MB video) — más arriba el `localStorage` peta.
+- **Migración de settings**. El schema arrancó como `v1` (linger en segundos) y mutó a `v2` (linger en minutos + background + news). `loadSettings()` migra una vez y reescribe bajo la clave nueva.
 - **`useMemo` siempre en el mismo orden**. Cuidado al añadir hooks: la página tiene `if (status === "loading")` y `if (!hasSession)` returns, así que **todos** los hooks deben llamarse antes de cualquier branch condicional.
 
 ---
@@ -279,6 +410,9 @@ El payload de un evento (`CalendarEventPayload`):
 - **Reloj del cliente desincronizado**. La cuenta regresiva usa `Date.now()` del navegador. Si tu reloj del SO está mal, la cuenta regresiva está mal. Fuera de scope arreglarlo.
 - **Refresh token revocado**. Google revoca refresh tokens después de 6 meses de inactividad o si quitas la app desde https://myaccount.google.com/permissions. La UI detecta el error y pide re-login.
 - **Mover eventos entre calendarios**. La API de Google no soporta cambiar `calendarId` con un PATCH. El modal de edición deja el calendario en read-only por esa razón.
+- **Settings no se sincronizan entre dispositivos**. Viven en `localStorage`. Para llevarlas a otra máquina: pestaña JSON → Copiar → pegar en el otro lado. No hay sync automático porque no hay backend de usuario.
+- **Tamaño de imagen/video de fondo**. Limitado a 4 MB / 16 MB por la cuota de `localStorage`. Para videos más grandes hay que servirlos por URL externa y pegar el link.
+- **Feeds de noticias muy raros**. El parser cubre RSS 2.0, Atom y JSON Feed v1.1. Feeds con extensiones exóticas (Media RSS, Dublin Core puro, etc.) pueden quedarse con campos vacíos. Si un feed no llega o tarda más de 10 s, el endpoint devuelve `502`.
 
 ---
 
@@ -297,7 +431,7 @@ Ideas pendientes a las que la comunidad puede aportar vía PR. Si quieres trabaj
 
 **Persistencia.** Guardar el set de IDs alertados en `localStorage`. Clave por evento: `eventId + ":" + startMs` — así si el organizador cambia la hora del evento, vuelve a alertar.
 
-**UX de permisos.** Un enlace pequeño en la nav inferior ("+ Nuevo evento | Notificaciones | Sign out") que solo aparece si `Notification.permission === "default"`. Al clickear, llama `Notification.requestPermission()`. Esconder el enlace si quedó en "granted" o "denied".
+**UX de permisos.** Un enlace pequeño en la nav inferior ("+ Nuevo evento | Notificaciones | Configuración | Cerrar sesión") que solo aparece si `Notification.permission === "default"`. Al clickear, llama `Notification.requestPermission()`. Esconder el enlace si quedó en "granted" o "denied".
 
 **Limpieza.** Cuando un evento sale del set de `upcoming` del API (pasó o fue cancelado), quitarlo del set de alertados para que `localStorage` no crezca infinitamente.
 
@@ -332,7 +466,9 @@ Por esto el banner in-app es necesario — no asume que la notificación del SO 
 - **Múltiples cuentas de Google** — selector para ver el calendario de varias cuentas a la vez.
 - **Soporte para Google Tasks** además de eventos (otra API y scope: `tasks.readonly`).
 - **PWA installable** — manifest + service worker para que se pueda instalar como app independiente.
-- **Tests** — la lógica de `lib/event-utils.ts` (parsing de TZ, filtrado, picker) es ideal para tests unitarios con Vitest. Hoy no hay ninguna suite.
+- **Sync de settings entre dispositivos** — opcional, con un backend mínimo (KV de Vercel / Upstash) atado al `sub` del JWT.
+- **Múltiples feeds de noticias** — hoy solo se soporta una URL. Permitir varias con peso/orden.
+- **Tests** — la lógica de `lib/event-utils.ts` (parsing de TZ, filtrado, picker, detección de feriados) y `lib/settings.ts` (migración v1→v2, deepMerge) son ideales para tests unitarios con Vitest. Hoy no hay ninguna suite.
 - **i18n** — la UI mezcla español e inglés. Centralizar strings.
 
 ---
