@@ -300,9 +300,9 @@ export default function Home() {
             ) : null}
             <GoogleSignInButton onClick={() => signIn("google")} />
             <div className="mt-2 text-[10px] text-[color:var(--muted)]/60">
-              Hecho por{" "}
+              Desarrollado por{" "}
               <a
-                href="https://github.com/natatechnology"
+                target="https://github.com/natatechnology"
                 target="_blank"
                 rel="noreferrer noopener"
                 className="text-[color:var(--muted)] hover:text-foreground underline underline-offset-2 transition"
